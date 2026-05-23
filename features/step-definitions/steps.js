@@ -45,22 +45,50 @@ Given(/^I am on the login page$/, async () => {
 Given(/^I am logged in as "([^"]*)" with password "([^"]*)"$/, async (username, password) => {
     await ensureLoggedOut();
     await LoginPage.login(username, password);
-    
-    // Esperar a que la redirección del login termine (hacia el dashboard)
-    await browser.waitUntil(
-        async () => {
-            try {
-                const url = await browser.getUrl();
-                return url.includes('overview');
-            } catch { return false; }
-        },
-        { timeout: 30000, timeoutMsg: 'No se navegó al dashboard después del login' }
-    );
-    
-    await browser.waitUntil(
-        async () => await AccountOverviewPage.accountsTable.isExisting(),
-        { timeout: 30000, timeoutMsg: 'La tabla de cuentas no cargó después del login' }
-    );
+
+    // Esperar a que la redirección del login termine (hacia el dashboard).
+    // En CI a veces hay redirecciones múltiples; comprobamos varias señales para estabilidad.
+    try {
+        await browser.waitUntil(
+            async () => {
+                try {
+                    const url = await browser.getUrl();
+                    if (url && url.includes('overview')) return true;
+
+                    const titleEl = await $('.title');
+                    if (await titleEl.isExisting()) {
+                        const text = await titleEl.getText();
+                        if (text && text.includes('Accounts Overview')) return true;
+                    }
+
+                    if (await AccountOverviewPage.accountsTable.isExisting()) return true;
+                    return false;
+                } catch (e) {
+                    return false;
+                }
+            },
+            { timeout: 60000, timeoutMsg: 'No se navegó al dashboard después del login' }
+        );
+
+        await browser.waitUntil(
+            async () => await AccountOverviewPage.accountsTable.isExisting(),
+            { timeout: 30000, timeoutMsg: 'La tabla de cuentas no cargó después del login' }
+        );
+    } catch (err) {
+        // Capturar evidencia útil para CI (screenshot + HTML) y reprotear el error.
+        try {
+            const fs = require('fs');
+            const dir = './test-artifacts';
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+            const ts = Date.now();
+            await browser.saveScreenshot(`${dir}/login_failure_${ts}.png`);
+            const pageSource = await browser.getPageSource();
+            fs.writeFileSync(`${dir}/login_failure_${ts}.html`, pageSource);
+        } catch (e) {
+            // ignore artifact errors
+        }
+        throw err;
+    }
 });
 
 
