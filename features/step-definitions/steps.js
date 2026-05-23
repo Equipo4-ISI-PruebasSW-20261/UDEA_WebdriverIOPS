@@ -47,48 +47,27 @@ Given(/^I am logged in as "([^"]*)" with password "([^"]*)"$/, async (username, 
     await LoginPage.login(username, password);
 
     // Esperar a que la redirección del login termine (hacia el dashboard).
-    // En CI a veces hay redirecciones múltiples; comprobamos varias señales para estabilidad.
-    try {
-        await browser.waitUntil(
-            async () => {
-                try {
-                    const url = await browser.getUrl();
-                    if (url && url.includes('overview')) return true;
+    // En CI a veces hay redirecciones múltiples; comprobamos dos señales y no
+    // esperamos la tabla aquí para no consumir todo el timeout del step.
+    await browser.waitUntil(
+        async () => {
+            try {
+                const url = await browser.getUrl();
+                if (url && url.includes('overview')) return true;
 
-                    const titleEl = await $('.title');
-                    if (await titleEl.isExisting()) {
-                        const text = await titleEl.getText();
-                        if (text && text.includes('Accounts Overview')) return true;
-                    }
-
-                    if (await AccountOverviewPage.accountsTable.isExisting()) return true;
-                    return false;
-                } catch (e) {
-                    return false;
+                const titleEl = await $('.title');
+                if (await titleEl.isExisting()) {
+                    const text = await titleEl.getText();
+                    return text.includes('Accounts Overview');
                 }
-            },
-            { timeout: 60000, timeoutMsg: 'No se navegó al dashboard después del login' }
-        );
 
-        await browser.waitUntil(
-            async () => await AccountOverviewPage.accountsTable.isExisting(),
-            { timeout: 30000, timeoutMsg: 'La tabla de cuentas no cargó después del login' }
-        );
-    } catch (err) {
-        // Capturar evidencia útil para CI (screenshot + HTML) y reprotear el error.
-        try {
-            const fs = require('fs');
-            const dir = './test-artifacts';
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-            const ts = Date.now();
-            await browser.saveScreenshot(`${dir}/login_failure_${ts}.png`);
-            const pageSource = await browser.getPageSource();
-            fs.writeFileSync(`${dir}/login_failure_${ts}.html`, pageSource);
-        } catch (e) {
-            // ignore artifact errors
-        }
-        throw err;
-    }
+                return false;
+            } catch {
+                return false;
+            }
+        },
+        { timeout: 20000, timeoutMsg: 'No se navegó al dashboard después del login' }
+    );
 });
 
 
@@ -229,8 +208,8 @@ Then(/^each account should display a balance amount$/, async () => {
     let validatedAccounts = 0;
 
     for (const row of accountRows) {
-        const accountLink = await row.$('td:first-child a');
-        if (!await accountLink.isExisting()) {
+        const accountLinks = await row.$$('td:first-child a');
+        if (accountLinks.length === 0) {
             // Ignorar filas agregadas como "Total" que no representan una cuenta.
             continue;
         }
