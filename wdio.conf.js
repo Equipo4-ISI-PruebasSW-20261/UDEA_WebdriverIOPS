@@ -23,7 +23,7 @@ export const config = {
     // will be called from there.
     //
     specs: [
-        './features/**/login.feature'
+        './features/**/*.feature'
     ],
     // Patterns to exclude.
     exclude: [
@@ -45,7 +45,7 @@ export const config = {
     // and 30 processes will get spawned. The property handles how many capabilities
     // from the same test should run tests.
     //
-    maxInstances: 10,
+    maxInstances: 1,
     //
     // If you have trouble getting all important capabilities together, check out the
     // Sauce Labs platform configurator - a great tool to configure your capabilities:
@@ -56,7 +56,7 @@ export const config = {
         // maxInstances can get overwritten per capability. So if you have an in-house Selenium
         // grid with only 5 firefox instances available you can make sure that not more than
         // 5 instances get started at a time.
-        maxInstances: 5,
+        maxInstances: 1,
         //
         browserName: 'chrome',
         acceptInsecureCerts: true
@@ -112,7 +112,7 @@ export const config = {
     // Services take over a specific job you don't want to take care of. They enhance
     // your test setup with almost no effort. Unlike plugins, they don't add new
     // commands. Instead, they hook themselves up into the test process.
-    services: ['chromedriver'],
+    services: [],
     
     // Framework you want to run your specs with.
     // The following are supported: Mocha, Jasmine, and Cucumber
@@ -177,8 +177,22 @@ export const config = {
      * @param {Object} config wdio configuration object
      * @param {Array.<Object>} capabilities list of capabilities details
      */
-    // onPrepare: function (config, capabilities) {
-    // },
+    onPrepare: async function (config, capabilities) {
+        // Inicializar la base de datos de Parabank antes de ejecutar las pruebas.
+        // El servidor público demo se resetea periódicamente, causando
+        // "Error! An internal error has occurred and has been logged."
+        // Este POST recrea los datos demo (usuario john/demo, cuentas, etc.)
+        try {
+            const response = await fetch('https://parabank.parasoft.com/parabank/db.htm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=INIT'
+            });
+            console.log(`[onPrepare] Parabank DB initialized — HTTP ${response.status}`);
+        } catch (error) {
+            console.warn(`[onPrepare] No se pudo inicializar la DB de Parabank: ${error.message}`);
+        }
+    },
     /**
      * Gets executed before a worker process is spawned and can be used to initialise specific service
      * for that worker as well as modify runtime environments in an async fashion.
