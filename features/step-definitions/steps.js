@@ -46,27 +46,18 @@ Given(/^I am logged in as "([^"]*)" with password "([^"]*)"$/, async (username, 
     await ensureLoggedOut();
     await LoginPage.login(username, password);
 
-    // Esperar a que la redirección del login termine (hacia el dashboard).
-    // En CI a veces hay redirecciones múltiples; comprobamos dos señales y no
-    // esperamos la tabla aquí para no consumir todo el timeout del step.
     await browser.waitUntil(
         async () => {
             try {
                 const url = await browser.getUrl();
                 if (url && url.includes('overview')) return true;
 
-                const titleEl = await $('.title');
-                if (await titleEl.isExisting()) {
-                    const text = await titleEl.getText();
-                    return text.includes('Accounts Overview');
-                }
-
-                return false;
+                return await AccountOverviewPage.accountsTable.isExisting();
             } catch {
                 return false;
             }
         },
-        { timeout: 20000, timeoutMsg: 'No se navegó al dashboard después del login' }
+        { timeout: 30000, interval: 500, timeoutMsg: 'No se navegó al dashboard después del login' }
     );
 });
 
