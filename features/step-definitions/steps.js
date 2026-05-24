@@ -78,7 +78,7 @@ When(/^I login with username "([^"]*)" and password "([^"]*)"$/, async (username
     if (password) await LoginPage.inputPassword.setValue(password);
     await LoginPage.btnSubmit.click();
     // Pausa breve para que inicie la navegación/respuesta del servidor
-    await browser.pause(1500);
+    await browser.waitForDisplayed();
 });
 
 /**
@@ -86,7 +86,7 @@ When(/^I login with username "([^"]*)" and password "([^"]*)"$/, async (username
  */
 When(/^I login with (\w+) and (.+)$/, async (username, password) => {
     await LoginPage.login(username, password);
-    await browser.pause(1500);
+    await browser.waitForDisplayed();
 });
 
 /**
@@ -161,6 +161,13 @@ Then(/^I should see a text saying (.*)$/, async (message) => {
         },
         { timeout: 20000, timeoutMsg: `El texto "${message}" no apareció en 20s` }
     );
+});
+
+/**
+ * Verificación de botón deshabilitado.
+ */
+Then(/^the login button should be disabled$/, async () => {
+    await expect(LoginPage.btnSubmit).toBeDisabled();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

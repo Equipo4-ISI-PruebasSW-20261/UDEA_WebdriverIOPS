@@ -27,6 +27,10 @@ Feature: Login - Inicio de sesión en Parabank
     Then I should see an error message containing "Error!"
 
   @login
+  Scenario: Botón de login deshabilitado cuando los campos están vacíos
+    Then the login button should be disabled
+
+  @login
   Scenario Outline: Login con múltiples combinaciones de credenciales
     When I login with username "<username>" and password "<password>"
     Then I should see the result message "<message>"
