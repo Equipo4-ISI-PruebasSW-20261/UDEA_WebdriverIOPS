@@ -16,14 +16,28 @@ import LoanPage            from '../pageobjects/loan.page.js';
  * Necesario porque Parabank mantiene cookies de sesión entre escenarios
  * del mismo worker. Sin esto, la segunda visita al login page
  * redirige al dashboard y el formulario no se muestra.
+ *
+ * La primera navegación al servidor demo puede fallar por cold-start.
+ * Se configura un pageLoad timeout de 30s para que no se cuelgue
+ * indefinidamente, y se reintenta hasta 3 veces.
  */
 async function ensureLoggedOut() {
-    await browser.url(`${config.baseUrl}/logout.htm`);
-    // Esperar a que el formulario de login esté disponible
-    await browser.waitUntil(
-        async () => await LoginPage.inputUsername.isExisting(),
-        { timeout: 10000, timeoutMsg: 'El formulario de login no apareció tras el logout' }
-    );
+    await browser.setTimeout({ 'pageLoad': 30000 });
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await browser.url(`${config.baseUrl}/logout.htm`);
+            await browser.waitUntil(
+                async () => await LoginPage.inputUsername.isExisting(),
+                { timeout: 10000, timeoutMsg: 'El formulario de login no apareció tras el logout' }
+            );
+            return;
+        } catch (err) {
+            if (attempt === maxRetries) throw err;
+            console.warn(`[ensureLoggedOut] Intento ${attempt} falló (${err.message}), reintentando...`);
+            await browser.pause(2000);
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,24 +55,40 @@ Given(/^I am on the login page$/, async () => {
 /**
  * Realiza login completo con logout previo.
  * Utilizado como Background en features que requieren autenticación.
+ * El servidor demo de Parabank es intermitente — a veces el POST de login
+ * no redirige al dashboard. Se reintenta el login completo si falla.
  */
 Given(/^I am logged in as "([^"]*)" with password "([^"]*)"$/, async (username, password) => {
-    await ensureLoggedOut();
-    await LoginPage.login(username, password);
+    const maxLoginRetries = 2;
+    for (let attempt = 1; attempt <= maxLoginRetries; attempt++) {
+        await ensureLoggedOut();
+        await LoginPage.login(username, password);
 
-    await browser.waitUntil(
-        async () => {
+        try {
+            await browser.waitUntil(
+                async () => {
+                    try {
+                        const url = await browser.getUrl();
+                        if (url && url.includes('overview')) return true;
+                        return await AccountOverviewPage.accountsTable.isExisting();
+                    } catch {
+                        return false;
+                    }
+                },
+                { timeout: 30000, interval: 500, timeoutMsg: 'No se navegó al dashboard después del login' }
+            );
+            return;
+        } catch (loginErr) {
+            if (attempt === maxLoginRetries) throw loginErr;
+            console.warn(`[login] Intento ${attempt} falló, reintentando...`);
             try {
-                const url = await browser.getUrl();
-                if (url && url.includes('overview')) return true;
-
-                return await AccountOverviewPage.accountsTable.isExisting();
-            } catch {
-                return false;
-            }
-        },
-        { timeout: 30000, interval: 500, timeoutMsg: 'No se navegó al dashboard después del login' }
-    );
+                const errEl = await $('.error');
+                if (await errEl.isExisting()) {
+                    console.warn(`[login] Página mostró error: ${await errEl.getText()}`);
+                }
+            } catch {}
+        }
+    }
 });
 
 

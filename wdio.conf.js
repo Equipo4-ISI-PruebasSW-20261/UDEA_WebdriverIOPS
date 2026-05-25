@@ -182,8 +182,9 @@ export const config = {
         // El servidor público demo se resetea periódicamente, causando
         // "Error! An internal error has occurred and has been logged."
         // Este POST recrea los datos demo (usuario john/demo, cuentas, etc.)
+        const base = 'https://parabank.parasoft.com/parabank';
         try {
-            const response = await fetch('https://parabank.parasoft.com/parabank/db.htm', {
+            const response = await fetch(`${base}/db.htm`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: 'action=INIT'
@@ -191,6 +192,14 @@ export const config = {
             console.log(`[onPrepare] Parabank DB initialized — HTTP ${response.status}`);
         } catch (error) {
             console.warn(`[onPrepare] No se pudo inicializar la DB de Parabank: ${error.message}`);
+        }
+        // Warmup: hacer un GET a la página principal para despertar el servidor
+        // demo antes de que los workers del browser empiecen a navegar.
+        try {
+            const res = await fetch(`${base}/index.htm`);
+            console.log(`[onPrepare] Warmup GET index.htm — HTTP ${res.status}`);
+        } catch (error) {
+            console.warn(`[onPrepare] Warmup falló: ${error.message}`);
         }
     },
     /**
@@ -230,17 +239,8 @@ export const config = {
      * @param {Array.<String>} specs        List of spec file paths that are to be run
      * @param {Object}         browser      instance of created browser/device session
      */
-    before: function (capabilities, specs) {
-        // Warmup: visitar Parabank para despertar el servidor demo antes
-        // de que cualquier test intente navegar. La primera petición puede
-        // tardar mucho si el servidor está en cold-start.
-        browser.setTimeout({ 'pageLoad': 90000 });
-        try {
-            browser.url('https://parabank.parasoft.com/parabank/index.htm');
-        } catch (e) {
-            console.warn('[before] Warmup navigation failed, continuing:', e.message);
-        }
-    },
+    // before: function (capabilities, specs) {
+    // },
     /**
      * Runs before a WebdriverIO command gets executed.
      * @param {String} commandName hook command name
