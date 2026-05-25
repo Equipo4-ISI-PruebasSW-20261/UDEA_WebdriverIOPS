@@ -230,8 +230,17 @@ export const config = {
      * @param {Array.<String>} specs        List of spec file paths that are to be run
      * @param {Object}         browser      instance of created browser/device session
      */
-    // before: function (capabilities, specs) {
-    // },
+    before: function (capabilities, specs) {
+        // Warmup: visitar Parabank para despertar el servidor demo antes
+        // de que cualquier test intente navegar. La primera petición puede
+        // tardar mucho si el servidor está en cold-start.
+        browser.setTimeout({ 'pageLoad': 90000 });
+        try {
+            browser.url('https://parabank.parasoft.com/parabank/index.htm');
+        } catch (e) {
+            console.warn('[before] Warmup navigation failed, continuing:', e.message);
+        }
+    },
     /**
      * Runs before a WebdriverIO command gets executed.
      * @param {String} commandName hook command name
