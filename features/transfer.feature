@@ -13,11 +13,25 @@ Feature: Transferencias entre Cuentas en Parabank
 
   @transfer
   Scenario: Transferencia exitosa entre cuentas propias
-    When I navigate to the transfer funds page
+    When I navigate to the accounts overview page
+    And I note the balance of the first account
+    And I navigate to the transfer funds page
     And I enter a transfer amount of "100"
     And I select different source and destination accounts
     And I click the transfer button
     Then I should see a transfer confirmation message "Transfer Complete!"
+
+  @transfer
+  Scenario: Transferencia se refleja inmediatamente en el balance
+    When I navigate to the accounts overview page
+    And I note the balance of the first account
+    And I navigate to the transfer funds page
+    And I enter a transfer amount of "100"
+    And I select different source and destination accounts
+    And I click the transfer button
+    Then I should see a transfer confirmation message "Transfer Complete!"
+    And I navigate to the accounts overview page
+    Then the balance of the first account should be different from before the transfer
 
   @transfer
   Scenario: Transferencia con monto cero muestra error

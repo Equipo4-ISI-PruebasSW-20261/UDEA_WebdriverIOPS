@@ -26,4 +26,7 @@ Feature: Consulta de Estados de Cuentas en Parabank
   Scenario: La información se actualiza al seleccionar diferente cuenta
     When I navigate to the accounts overview page
     And I click on the first account
-    Then I should see transaction activity for the account
+    And I note the current account id
+    And I navigate to the accounts overview page
+    And I click on account at index 1
+    Then the current account id should be different

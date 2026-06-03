@@ -25,6 +25,7 @@ Feature: Pagos a Beneficiarios en Parabank
     And I fill in the payment amount "50"
     And I click the send payment button
     Then I should see a bill pay success message "Bill Payment Complete!"
+    And the payment confirmation should show amount "50" and payee "Juan Perez"
 
   @billpay
   Scenario: Pago con campos vacíos muestra error de validación

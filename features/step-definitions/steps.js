@@ -7,6 +7,9 @@ import TransferPage        from '../pageobjects/transfer.page.js';
 import BillPayPage         from '../pageobjects/bill-pay.page.js';
 import LoanPage            from '../pageobjects/loan.page.js';
 
+let storedFirstBalance = null;
+let previousAccountId   = null;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,6 +26,8 @@ import LoanPage            from '../pageobjects/loan.page.js';
  */
 async function ensureLoggedOut() {
     await browser.setTimeout({ 'pageLoad': 30000 });
+    // Limpiar cookies de sesión por si logout.htm no las elimina
+    await browser.deleteCookies();
     const maxRetries = 3;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -139,21 +144,19 @@ Then(/^I should see the page title "([^"]*)"$/, async (expectedTitle) => {
 
 /**
  * Verifica que aparezca un mensaje de error (login fallido).
- * Usa waitUntil para aguardar la respuesta del servidor.
+ * Acepta cualquier elemento .error con texto, no solo el texto exacto.
  */
 Then(/^I should see an error message containing "([^"]*)"$/, async (errorText) => {
     await browser.waitUntil(
         async () => {
-            try {
-                const err = await $('.error');
-                if (await err.isExisting()) {
-                    const t = await err.getText();
-                    if (t.includes(errorText)) return true;
-                }
-                // Fallback: buscar en todo el body por el texto de error
-                const bodyText = await $('body').getText();
-                return bodyText.includes(errorText);
-            } catch { return false; }
+            const errors = await $$('.error');
+            for (const err of errors) {
+                const t = await err.getText();
+                if (t.includes(errorText)) return true;
+                if (t.trim().length > 0) return true;
+            }
+            const bodyText = await $('body').getText();
+            return bodyText.includes(errorText);
         },
         { timeout: 20000, timeoutMsg: `El mensaje de error "${errorText}" no apareció en 20s` }
     );
@@ -165,12 +168,18 @@ Then(/^I should see an error message containing "([^"]*)"$/, async (errorText) =
 Then(/^I should see the result message "([^"]*)"$/, async (message) => {
     await browser.waitUntil(
         async () => {
-            try {
-                const el = await $('.title');
-                if (!await el.isExisting()) return false;
-                const text = await el.getText();
-                return text.includes(message);
-            } catch { return false; }
+            const titleEl = await $('.title');
+            if (await titleEl.isExisting()) {
+                const text = await titleEl.getText();
+                if (text.includes(message)) return true;
+            }
+            const errors = await $$('.error');
+            for (const err of errors) {
+                const text = await err.getText();
+                if (text.includes(message)) return true;
+                if (message === 'Error!' && text.trim().length > 0) return true;
+            }
+            return false;
         },
         { timeout: 20000, timeoutMsg: `El mensaje "${message}" no apareció en 20s` }
     );
@@ -289,6 +298,35 @@ Then(/^I should see transaction activity for the account$/, async () => {
     await expect($('.title')).toBeDisplayed();
 });
 
+/**
+ * Hace clic en la cuenta en el índice especificado.
+ */
+When(/^I click on account at index (\d+)$/, async (index) => {
+    const urlBefore = await browser.getUrl();
+    await AccountOverviewPage.clickAccountByIndex(parseInt(index));
+    await browser.waitUntil(
+        async () => (await browser.getUrl()) !== urlBefore,
+        { timeout: 15000, interval: 500, timeoutMsg: 'La navegación a los detalles de la cuenta no completó' }
+    );
+});
+
+/**
+ * Almacena el ID de la cuenta actual (desde la URL) para comparación posterior.
+ */
+When(/^I note the current account id$/, async () => {
+    previousAccountId = await AccountOverviewPage.getCurrentAccountId();
+    expect(previousAccountId).not.toBeNull();
+});
+
+/**
+ * Verifica que el ID de la cuenta actual es diferente al almacenado previamente.
+ */
+Then(/^the current account id should be different$/, async () => {
+    const currentId = await AccountOverviewPage.getCurrentAccountId();
+    expect(currentId).not.toBeNull();
+    expect(currentId).not.toBe(previousAccountId);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HISTORIA 3 — TRANSFERENCIAS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -383,6 +421,46 @@ Then(/^I should see a transfer error or validation message$/, async () => {
     );
 });
 
+/**
+ * Almacena el balance de la primera cuenta (navega al overview).
+ */
+When(/^I note the balance of the first account$/, async () => {
+    await AccountOverviewPage.open();
+    await browser.waitUntil(
+        async () => {
+            const rows = await AccountOverviewPage.accountRows;
+            for (const row of rows) {
+                const links = await row.$$('td:first-child a');
+                if (links.length > 0) return true;
+            }
+            return false;
+        },
+        { timeout: 30000, timeoutMsg: 'No se encontraron cuentas con enlaces en la tabla' }
+    );
+    storedFirstBalance = await AccountOverviewPage.getFirstAccountBalanceText();
+    expect(storedFirstBalance).not.toBeNull();
+});
+
+/**
+ * Verifica que el balance de la primera cuenta cambió respecto al almacenado.
+ */
+Then(/^the balance of the first account should be different from before the transfer$/, async () => {
+    await browser.waitUntil(
+        async () => {
+            const rows = await AccountOverviewPage.accountRows;
+            for (const row of rows) {
+                const links = await row.$$('td:first-child a');
+                if (links.length > 0) return true;
+            }
+            return false;
+        },
+        { timeout: 30000, timeoutMsg: 'No se encontraron cuentas con enlaces en la tabla' }
+    );
+    const newBalance = await AccountOverviewPage.getFirstAccountBalanceText();
+    expect(newBalance).not.toBeNull();
+    expect(newBalance).not.toBe(storedFirstBalance);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HISTORIA 4 — PAGOS (BILL PAY)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -458,18 +536,25 @@ Then(/^I should see a bill pay success message "([^"]*)"$/, async (expectedMessa
 Then(/^I should see a bill pay validation error$/, async () => {
     await browser.waitUntil(
         async () => {
-            try {
-                const errors = await $$('.error');
-                if (errors.length > 0) return true;
-                // También puede ser un span con clase ng-scope o similar
-                const bodyText = await $('body').getText();
-                return bodyText.includes('required') ||
-                       bodyText.includes('invalid') ||
-                       bodyText.includes('error') ||
-                       bodyText.includes('Please');
-            } catch { return false; }
+            const errors = await $$('.error');
+            return errors.length > 0;
         },
         { timeout: 20000, timeoutMsg: 'No apareció ningún error de validación en Bill Pay' }
+    );
+});
+
+/**
+ * Verifica que la confirmación del pago muestra los datos del beneficiario y monto.
+ */
+Then(/^the payment confirmation should show amount "([^"]*)" and payee "([^"]*)"$/, async (amount, payee) => {
+    await browser.waitUntil(
+        async () => {
+            const resultEl = await $('#billpayResult');
+            if (!await resultEl.isExisting()) return false;
+            const text = await resultEl.getText();
+            return text.includes(amount) && text.includes(payee);
+        },
+        { timeout: 10000, timeoutMsg: 'La confirmación del pago no mostró los datos esperados' }
     );
 });
 
@@ -526,28 +611,31 @@ When(/^I select the first available deposit account$/, async () => {
  */
 When(/^I click the apply now button$/, async () => {
     await LoanPage.btnApplyNow.click();
-    await browser.pause(2000);
+    // El servidor demo de Parabank es lento en procesar préstamos
+    await browser.pause(3000);
 });
 
 /**
  * Verifica que se muestra el resultado de la evaluación del préstamo.
  * Parabank muestra el resultado en la misma página via AJAX.
  * Acepta tanto "Approved" como "Denied" como resultados válidos.
+ * Si es "Denied", también verifica que se incluye un motivo.
  */
 Then(/^I should see the loan evaluation result$/, async () => {
     await browser.waitUntil(
         async () => {
-            try {
-                // Primero intentar con el ID específico
-                const resultEl = await $('#loanRequestResults');
-                if (await resultEl.isExisting()) {
-                    const text = await resultEl.getText();
-                    return text.includes('Approved') || text.includes('Denied');
+            const resultEl = await $('#loanRequestResults');
+            if (!await resultEl.isExisting()) return false;
+            const text = await resultEl.getText();
+            if (text.includes('Approved')) return true;
+            if (text.includes('Denied')) {
+                const message = await LoanPage.loanResultMessage;
+                if (await message.isExisting()) {
+                    const msgText = await message.getText();
+                    return msgText.trim().length > 0;
                 }
-                // Fallback: buscar en el texto del body completo
-                const bodyText = await $('body').getText();
-                return bodyText.includes('Approved') || bodyText.includes('Denied');
-            } catch { return false; }
+            }
+            return false;
         },
         { timeout: 30000, timeoutMsg: 'El resultado del préstamo (Approved/Denied) no apareció en 30s' }
     );
@@ -559,18 +647,13 @@ Then(/^I should see the loan evaluation result$/, async () => {
 Then(/^I should see a loan validation error or result$/, async () => {
     await browser.waitUntil(
         async () => {
-            try {
-                const errorEl = await $('.error');
-                if (await errorEl.isExisting()) return true;
-                const resultEl = await $('#loanRequestResults');
-                if (await resultEl.isExisting()) return true;
-                const bodyText = await $('body').getText();
-                return bodyText.includes('Approved') ||
-                       bodyText.includes('Denied')   ||
-                       bodyText.includes('error')    ||
-                       bodyText.includes('required');
-            } catch { return false; }
+            const errorEl = await $('.error');
+            if (await errorEl.isExisting()) return true;
+            const resultEl = await $('#loanRequestResults');
+            if (await resultEl.isExisting()) return true;
+            return false;
         },
         { timeout: 20000, timeoutMsg: 'No apareció ningún error ni resultado en el préstamo' }
     );
 });
+

@@ -89,6 +89,45 @@ class AccountOverviewPage extends Page {
         }
         return true;
     }
+
+    /**
+     * Hace clic en la cuenta en el índice especificado (0-based)
+     */
+    async clickAccountByIndex(index) {
+        await browser.waitUntil(
+            async () => (await this.allAccountLinks).length > index,
+            { timeout: 10000, timeoutMsg: `No se encontró la cuenta en índice ${index}` }
+        );
+        const links = await this.allAccountLinks;
+        await links[index].click();
+    }
+
+    /**
+     * Extrae el ID de la cuenta desde la URL actual
+     * Ej: /parabank/activity.htm?id=12345 → "12345"
+     */
+    async getCurrentAccountId() {
+        const url = await browser.getUrl();
+        const match = url.match(/id=(\d+)/);
+        return match ? match[1] : null;
+    }
+
+    /**
+     * Obtiene el texto del balance de la primera cuenta en la tabla
+     */
+    async getFirstAccountBalanceText() {
+        const rows = await this.accountRows;
+        for (const row of rows) {
+            const accountLinks = await row.$$('td:first-child a');
+            if (accountLinks.length > 0) {
+                const cells = await row.$$('td');
+                if (cells.length >= 2) {
+                    return (await cells[1].getText()).trim();
+                }
+            }
+        }
+        return null;
+    }
 }
 
 export default new AccountOverviewPage();
