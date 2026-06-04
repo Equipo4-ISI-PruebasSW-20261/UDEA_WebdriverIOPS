@@ -47,4 +47,4 @@ Feature: Transferencias entre Cuentas en Parabank
     And I enter a transfer amount of "99999999"
     And I select different source and destination accounts
     And I click the transfer button
-    Then I should see a transfer error or validation message
+    Then I should see an error that the amount exceeds the available balance

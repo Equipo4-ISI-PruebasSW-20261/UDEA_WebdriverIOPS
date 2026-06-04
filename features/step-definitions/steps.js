@@ -422,6 +422,26 @@ Then(/^I should see a transfer error or validation message$/, async () => {
 });
 
 /**
+ * Verifica que aparece un error específico de fondos insuficientes.
+ * Parabank NO valida que el monto no exceda el saldo, por lo que este step
+ * debe fallar: la app procesa la transferencia con éxito aunque el saldo
+ * sea insuficiente.
+ */
+Then(/^I should see an error that the amount exceeds the available balance$/, async () => {
+    await browser.waitUntil(
+        async () => {
+            try {
+                const errorEl = await TransferPage.errorMessage;
+                if (!await errorEl.isExisting()) return false;
+                const text = await errorEl.getText();
+                return /insufficient|exceed|exceeds?|available|fondos\s*insuficientes|excede|saldo/i.test(text);
+            } catch { return false; }
+        },
+        { timeout: 20000, timeoutMsg: 'No apareció error de fondos insuficientes al exceder el saldo disponible' }
+    );
+});
+
+/**
  * Almacena el balance de la primera cuenta (navega al overview).
  */
 When(/^I note the balance of the first account$/, async () => {
@@ -544,17 +564,23 @@ Then(/^I should see a bill pay validation error$/, async () => {
 });
 
 /**
- * Verifica que la confirmación del pago muestra los datos del beneficiario y monto.
+ * Verifica que la confirmación del pago muestra los datos del beneficiario y monto
+ * ANTES de enviar el pago. Parabank NO muestra una confirmación previa al envío
+ * (solo muestra #billpayResult después de enviar), por lo que este step debe fallar.
  */
 Then(/^the payment confirmation should show amount "([^"]*)" and payee "([^"]*)"$/, async (amount, payee) => {
     await browser.waitUntil(
         async () => {
-            const resultEl = await $('#billpayResult');
-            if (!await resultEl.isExisting()) return false;
-            const text = await resultEl.getText();
-            return text.includes(amount) && text.includes(payee);
+            // Busca una sección de confirmación previa al envío (no #billpayResult que es post-envío)
+            const reviewPanels = await $$('#paymentConfirmation, #reviewPayment, .confirm-dialog, .payment-review, #confirmSection');
+            for (const panel of reviewPanels) {
+                if (!await panel.isExisting()) continue;
+                const text = await panel.getText();
+                if (text.includes(amount) || text.includes(payee)) return true;
+            }
+            return false;
         },
-        { timeout: 10000, timeoutMsg: 'La confirmación del pago no mostró los datos esperados' }
+        { timeout: 10000, timeoutMsg: 'No se muestra la confirmación del pago con los datos antes de enviar' }
     );
 });
 
@@ -612,26 +638,26 @@ When(/^I select the first available deposit account$/, async () => {
 When(/^I click the apply now button$/, async () => {
     await LoanPage.btnApplyNow.click();
     // El servidor demo de Parabank es lento en procesar préstamos
-    await browser.pause(3000);
+    await browser.pause(5000);
 });
 
 /**
  * Verifica que se muestra el resultado de la evaluación del préstamo.
- * Parabank muestra el resultado en la misma página via AJAX.
+ * Parabank muestra el resultado en #requestLoanResult via AJAX.
  * Acepta tanto "Approved" como "Denied" como resultados válidos.
  * Si es "Denied", también verifica que se incluye un motivo.
  */
 Then(/^I should see the loan evaluation result$/, async () => {
     await browser.waitUntil(
         async () => {
-            const resultEl = await $('#loanRequestResults');
+            const resultEl = await LoanPage.loanResult;
             if (!await resultEl.isExisting()) return false;
-            const text = await resultEl.getText();
-            if (text.includes('Approved')) return true;
-            if (text.includes('Denied')) {
-                const message = await LoanPage.loanResultMessage;
-                if (await message.isExisting()) {
-                    const msgText = await message.getText();
+            const statusText = await LoanPage.loanStatus.getText();
+            if (statusText === 'Approved') return true;
+            if (statusText === 'Denied') {
+                const deniedMsg = await LoanPage.loanDeniedMessage;
+                if (await deniedMsg.isExisting()) {
+                    const msgText = await deniedMsg.getText();
                     return msgText.trim().length > 0;
                 }
             }
@@ -649,8 +675,10 @@ Then(/^I should see a loan validation error or result$/, async () => {
         async () => {
             const errorEl = await $('.error');
             if (await errorEl.isExisting()) return true;
-            const resultEl = await $('#loanRequestResults');
+            const resultEl = await LoanPage.loanResult;
             if (await resultEl.isExisting()) return true;
+            const loanErrorEl = await LoanPage.loanError;
+            if (await loanErrorEl.isExisting()) return true;
             return false;
         },
         { timeout: 20000, timeoutMsg: 'No apareció ningún error ni resultado en el préstamo' }
